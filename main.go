@@ -6,25 +6,26 @@ import (
 	"io"
 	"log"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 )
 
 // Config holds the configuration for the conversion
 type Config struct {
-	InputFile      string
-	TableName      string
-	Delimiter      rune
-	HasHeader      bool
-	VarcharLength  int
-	TextThreshold  int
-	BatchInsert    bool
-	BatchSize      int
-	NullString     string
-	ForceTypes     map[string]string // column name -> MySQL type
-	SkipColumns    map[string]bool   // columns to skip
-	PrimaryKeys    []string          // columns to set as primary keys
+	InputFile     string
+	TableName     string
+	Delimiter     rune
+	HasHeader     bool
+	VarcharLength int
+	TextThreshold int
+	BatchInsert   bool
+	BatchSize     int
+	NullString    string
+	ForceTypes    map[string]string // column name -> MySQL type
+	SkipColumns   map[string]bool   // columns to skip
+	PrimaryKeys   []string          // columns to set as primary keys
+	MaxSampleSize int               // Max rows to sample for type inference
 }
 
 // DefaultConfig returns a default configuration
@@ -39,8 +40,14 @@ func DefaultConfig() Config {
 		NullString:    "NULL",
 		ForceTypes:    make(map[string]string),
 		SkipColumns:   make(map[string]bool),
+		MaxSampleSize: 1000,
 	}
 }
+
+var (
+	sanitizeRegex = regexp.MustCompile(`[^a-zA-Z0-9_]+`)
+	leadingRegex  = regexp.MustCompile(`^[^a-zA-Z_]`)
+)
 
 // CSVToMySQLConverter handles the conversion process
 type CSVToMySQLConverter struct {
@@ -62,39 +69,14 @@ func (c *CSVToMySQLConverter) Convert() (string, string, error) {
 
 	reader := csv.NewReader(file)
 	reader.Comma = c.config.Delimiter
+	reader.TrimLeadingSpace = true
 
-	// Read header
-	var headers []string
-	if c.config.HasHeader {
-		headers, err = reader.Read()
-		if err != nil {
-			return "", "", fmt.Errorf("error reading header: %w", err)
-		}
-		// Clean up headers
-		for i, h := range headers {
-			headers[i] = c.sanitizeColumnName(h)
-		}
+	headers, err := c.readHeaders(reader)
+	if err != nil {
+		return "", "", fmt.Errorf("error reading headers: %w", err)
 	}
 
-	// Read first row to determine column count if no header
-	var firstRow []string
-	if !c.config.HasHeader {
-		firstRow, err = reader.Read()
-		if err != nil {
-			return "", "", fmt.Errorf("error reading first row: %w", err)
-		}
-		headers = make([]string, len(firstRow))
-		for i := range firstRow {
-			headers[i] = fmt.Sprintf("column_%d", i+1)
-		}
-		// Reset reader to beginning
-		file.Seek(0, 0)
-		reader = csv.NewReader(file)
-		reader.Comma = c.config.Delimiter
-	}
-
-	// Process all rows to determine column types
-	columnTypes, err := c.determineColumnTypes(reader, headers, firstRow)
+	columnTypes, err := c.determineColumnTypes(reader, headers)
 	if err != nil {
 		return "", "", fmt.Errorf("error determining column types: %w", err)
 	}
@@ -111,45 +93,61 @@ func (c *CSVToMySQLConverter) Convert() (string, string, error) {
 	return createTable, inserts, nil
 }
 
-// sanitizeColumnName cleans up column names for SQL
-func (c *CSVToMySQLConverter) sanitizeColumnName(name string) string {
-	// Trim whitespace
-	name = strings.TrimSpace(name)
-	
-	// Remove special characters
-	var sb strings.Builder
-	for _, r := range name {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' {
-			sb.WriteRune(r)
-		} else if unicode.IsSpace(r) {
-			sb.WriteRune('_')
+func (c *CSVToMySQLConverter) readHeaders(reader *csv.Reader) ([]string, error) {
+	if c.config.HasHeader {
+		rawHeaders, err := reader.Read()
+		if err != nil {
+			return nil, fmt.Errorf("error reading header: %w", err)
 		}
+
+		headers := make([]string, len(rawHeaders))
+		for i, h := range rawHeaders {
+			headers[i] = c.sanitizeColumnName(h)
+			if headers[i] == "" {
+				headers[i] = fmt.Sprintf("column_%d", i+1)
+			}
+		}
+		return headers, nil
 	}
-	
-	result := sb.String()
-	if result == "" {
-		return "column"
+
+	firstRow, err := reader.Read()
+	if err != nil {
+		return nil, fmt.Errorf("error reading first row: %w", err)
 	}
-	
-	// Ensure it doesn't start with a number
-	if unicode.IsDigit(rune(result[0])) {
-		result = "col_" + result
+
+	headers := make([]string, len(firstRow))
+	for i := range firstRow {
+		headers[i] = fmt.Sprintf("column_%d", i+1)
 	}
-	
-	return strings.ToLower(result)
+
+	file, err := os.Open(c.config.InputFile)
+	if err != nil {
+		return nil, fmt.Errorf("error reopening file: %w", err)
+	}
+	defer file.Close()
+
+	reader = csv.NewReader(file)
+	reader.Comma = c.config.Delimiter
+	reader.TrimLeadingSpace = true
+
+	return headers, nil
 }
 
-// determineColumnTypes analyzes the CSV data to determine appropriate MySQL types
-func (c *CSVToMySQLConverter) determineColumnTypes(reader *csv.Reader, headers []string, firstRow []string) ([]string, error) {
-	// Reset reader if we've already read the first row
-	if firstRow != nil {
-		reader = csv.NewReader(io.MultiReader(
-			strings.NewReader(strings.Join(firstRow, string(c.config.Delimiter))+"\n"),
-			os.Stdin,
-		))
-		reader.Comma = c.config.Delimiter
+func (c *CSVToMySQLConverter) sanitizeColumnName(name string) string {
+	// Clean special characters
+	name = sanitizeRegex.ReplaceAllString(strings.TrimSpace(name), "_")
+	name = strings.Trim(name, "_")
+
+	// Ensure valid starting character
+	if leadingRegex.MatchString(name) {
+		name = "_" + name
 	}
 
+	// Ensure lowercase
+	return strings.ToLower(name)
+}
+
+func (c *CSVToMySQLConverter) determineColumnTypes(reader *csv.Reader, headers []string) ([]string, error) {
 	columnTypes := make([]string, len(headers))
 	for i := range columnTypes {
 		if forcedType, ok := c.config.ForceTypes[headers[i]]; ok {
@@ -157,7 +155,7 @@ func (c *CSVToMySQLConverter) determineColumnTypes(reader *csv.Reader, headers [
 		} else if c.config.SkipColumns[headers[i]] {
 			columnTypes[i] = "SKIP"
 		} else {
-			columnTypes[i] = "VARCHAR(255)" // Default, will be refined
+			columnTypes[i] = "TEXT"
 		}
 	}
 
@@ -174,9 +172,7 @@ func (c *CSVToMySQLConverter) determineColumnTypes(reader *csv.Reader, headers [
 	}
 
 	// Sample up to 1000 rows to determine types
-	sampleSize := 0
-	maxSampleSize := 1000
-
+	sampleCount := 0
 	for {
 		record, err := reader.Read()
 		if err == io.EOF {
@@ -187,7 +183,8 @@ func (c *CSVToMySQLConverter) determineColumnTypes(reader *csv.Reader, headers [
 		}
 
 		if len(record) != len(headers) {
-			return nil, fmt.Errorf("column count mismatch: expected %d, got %d", len(headers), len(record))
+			log.Printf("Skipping row with %d columns (expected %d)", len(record), len(headers))
+			continue
 		}
 
 		for i, value := range record {
@@ -207,63 +204,14 @@ func (c *CSVToMySQLConverter) determineColumnTypes(reader *csv.Reader, headers [
 
 			currentType := columnTypes[i]
 
-			// Check for integer
-			if _, err := strconv.ParseInt(value, 10, 64); err == nil {
-				if currentType == "VARCHAR(255)" {
-					columnTypes[i] = "INT"
-				}
-				continue
-			}
-
-			// Check for decimal
-			if _, err := strconv.ParseFloat(value, 64); err == nil {
-				if currentType == "VARCHAR(255)" || currentType == "INT" {
-					columnTypes[i] = "DECIMAL(20,6)"
-				}
-				continue
-			}
-
-			// Check for date/datetime
-			if isDate(value) {
-				if len(value) > 10 {
-					columnTypes[i] = "DATETIME"
-				} else {
-					columnTypes[i] = "DATE"
-				}
-				continue
-			}
-
-			// It's some kind of string
-			length := len(value)
-			if currentType == "VARCHAR(255)" {
-				if length > c.config.TextThreshold {
-					columnTypes[i] = "TEXT"
-				} else if length > c.config.VarcharLength {
-					newLength := ((length / 50) + 1) * 50 // Round up to nearest 50
-					if newLength > 65535 {
-						columnTypes[i] = "TEXT"
-					} else {
-						columnTypes[i] = fmt.Sprintf("VARCHAR(%d)", newLength)
-					}
-				}
-			} else if strings.HasPrefix(currentType, "VARCHAR(") {
-				if length > c.extractVarcharLength(currentType) {
-					if length > c.config.TextThreshold {
-						columnTypes[i] = "TEXT"
-					} else {
-						newLength := ((length / 50) + 1) * 50 // Round up to nearest 50
-						if newLength > 65535 {
-							columnTypes[i] = "TEXT"
-						} else {
-							columnTypes[i] = fmt.Sprintf("VARCHAR(%d)", newLength)
-						}
-					}
-				}
+			// Type detection logic from first implementation
+			if _, ok := c.config.ForceTypes[headers[i]]; !ok {
+				columnTypes[i] = c.refineType(currentType, value)
 			}
 		}
 
-		sampleSize++
-		if sampleSize >= maxSampleSize {
+		sampleCount++
+		if sampleCount >= c.config.MaxSampleSize {
 			break
 		}
 	}
@@ -271,18 +219,29 @@ func (c *CSVToMySQLConverter) determineColumnTypes(reader *csv.Reader, headers [
 	return columnTypes, nil
 }
 
-// extractVarcharLength gets the length from a VARCHAR(n) definition
-func (c *CSVToMySQLConverter) extractVarcharLength(typeDef string) int {
-	start := strings.Index(typeDef, "(")
-	end := strings.Index(typeDef, ")")
-	if start == -1 || end == -1 {
-		return c.config.VarcharLength
+func (c *CSVToMySQLConverter) refineType(currentType, value string) string {
+	// Enhanced type detection combining both implementations
+	if isInteger(value) {
+		return "BIGINT"
 	}
-	length, err := strconv.Atoi(typeDef[start+1 : end])
-	if err != nil {
-		return c.config.VarcharLength
+	if isDecimal(value) {
+		return "DECIMAL(20,6)"
 	}
-	return length
+	if isDate(value) {
+		if len(value) > 10 {
+			return "DATETIME"
+		}
+		return "DATE"
+	}
+
+	length := len(value)
+	if length > c.config.TextThreshold {
+		return "TEXT"
+	}
+	if length > c.config.VarcharLength {
+		return fmt.Sprintf("VARCHAR(%d)", ((length/50)+1)*50)
+	}
+	return fmt.Sprintf("VARCHAR(%d)", c.config.VarcharLength)
 }
 
 // generateCreateTable generates the MySQL CREATE TABLE statement
@@ -416,7 +375,17 @@ func (c *CSVToMySQLConverter) formatBatchInsert(headers []string, columnTypes []
 		strings.Join(rows, ",\n"))
 }
 
-// isDate checks if a string looks like a date
+// Helper functions from second implementation
+func isInteger(s string) bool {
+	_, err := strconv.ParseInt(s, 10, 64)
+	return err == nil
+}
+
+func isDecimal(s string) bool {
+	_, err := strconv.ParseFloat(s, 64)
+	return err == nil
+}
+
 func isDate(s string) bool {
 	// Simple date patterns
 	patterns := []string{
@@ -434,6 +403,18 @@ func isDate(s string) bool {
 		}
 	}
 	return false
+}
+
+// Escaping function from second implementation
+func escapeSQLValue(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || strings.EqualFold(trimmed, "NULL") {
+		return "NULL"
+	}
+
+	escaped := strings.ReplaceAll(trimmed, "'", "''")
+	escaped = strings.ReplaceAll(escaped, "\\", "\\\\")
+	return "'" + escaped + "'"
 }
 
 func main() {
