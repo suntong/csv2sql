@@ -22,26 +22,15 @@ type Config struct {
 	BatchInsert   bool
 	BatchSize     int
 	NullString    string
-	ForceTypes    map[string]string // column name -> MySQL type
-	SkipColumns   map[string]bool   // columns to skip
-	PrimaryKeys   []string          // columns to set as primary keys
-	MaxSampleSize int               // Max rows to sample for type inference
+	PrimaryKeys   []string
+	MaxSampleSize int
 }
 
-// DefaultConfig returns a default configuration
-func DefaultConfig() Config {
-	return Config{
-		Delimiter:     ',',
-		HasHeader:     true,
-		VarcharLength: 255,
-		TextThreshold: 500,
-		BatchInsert:   true,
-		BatchSize:     100,
-		NullString:    "NULL",
-		ForceTypes:    make(map[string]string),
-		SkipColumns:   make(map[string]bool),
-		MaxSampleSize: 1000,
-	}
+// CSVToMySQLConverter handles the conversion process
+type CSVToMySQLConverter struct {
+	Config
+	ForceTypes  map[string]string // column name -> MySQL type
+	SkipColumns map[string]bool   // columns to skip
 }
 
 var (
@@ -49,26 +38,34 @@ var (
 	leadingRegex  = regexp.MustCompile(`^[^a-zA-Z_]`)
 )
 
-// CSVToMySQLConverter handles the conversion process
-type CSVToMySQLConverter struct {
-	config Config
-}
-
 // NewCSVToMySQLConverter creates a new converter instance
-func NewCSVToMySQLConverter(config Config) *CSVToMySQLConverter {
-	return &CSVToMySQLConverter{config: config}
+func NewCSVToMySQLConverter() *CSVToMySQLConverter {
+	return &CSVToMySQLConverter{
+		Config: Config{
+			Delimiter:     ',',
+			HasHeader:     true,
+			VarcharLength: 255,
+			TextThreshold: 500,
+			BatchInsert:   true,
+			BatchSize:     100,
+			NullString:    "NULL",
+			MaxSampleSize: 1000,
+		},
+		ForceTypes:  make(map[string]string),
+		SkipColumns: make(map[string]bool),
+	}
 }
 
 // Convert processes the CSV file and generates MySQL statements
 func (c *CSVToMySQLConverter) Convert() (string, string, error) {
-	file, err := os.Open(c.config.InputFile)
+	file, err := os.Open(c.InputFile)
 	if err != nil {
 		return "", "", fmt.Errorf("error opening file: %w", err)
 	}
 	defer file.Close()
 
 	reader := csv.NewReader(file)
-	reader.Comma = c.config.Delimiter
+	reader.Comma = c.Delimiter
 	reader.TrimLeadingSpace = true
 
 	headers, err := c.readHeaders(reader)
@@ -94,7 +91,7 @@ func (c *CSVToMySQLConverter) Convert() (string, string, error) {
 }
 
 func (c *CSVToMySQLConverter) readHeaders(reader *csv.Reader) ([]string, error) {
-	if c.config.HasHeader {
+	if c.HasHeader {
 		rawHeaders, err := reader.Read()
 		if err != nil {
 			return nil, fmt.Errorf("error reading header: %w", err)
@@ -120,14 +117,14 @@ func (c *CSVToMySQLConverter) readHeaders(reader *csv.Reader) ([]string, error) 
 		headers[i] = fmt.Sprintf("column_%d", i+1)
 	}
 
-	file, err := os.Open(c.config.InputFile)
+	file, err := os.Open(c.InputFile)
 	if err != nil {
 		return nil, fmt.Errorf("error reopening file: %w", err)
 	}
 	defer file.Close()
 
 	reader = csv.NewReader(file)
-	reader.Comma = c.config.Delimiter
+	reader.Comma = c.Delimiter
 	reader.TrimLeadingSpace = true
 
 	return headers, nil
@@ -149,10 +146,10 @@ func (c *CSVToMySQLConverter) sanitizeColumnName(name string) string {
 
 func (c *CSVToMySQLConverter) determineColumnTypes(reader *csv.Reader, headers []string) ([]string, error) {
 	columnTypes := make([]string, len(headers))
-	for i := range columnTypes {
-		if forcedType, ok := c.config.ForceTypes[headers[i]]; ok {
+	for i := range headers {
+		if forcedType, ok := c.ForceTypes[headers[i]]; ok {
 			columnTypes[i] = forcedType
-		} else if c.config.SkipColumns[headers[i]] {
+		} else if c.SkipColumns[headers[i]] {
 			columnTypes[i] = "SKIP"
 		} else {
 			columnTypes[i] = "TEXT"
@@ -193,25 +190,22 @@ func (c *CSVToMySQLConverter) determineColumnTypes(reader *csv.Reader, headers [
 			}
 
 			// Skip if type is forced
-			if _, ok := c.config.ForceTypes[headers[i]]; ok {
+			if _, ok := c.ForceTypes[headers[i]]; ok {
 				continue
 			}
 
 			value = strings.TrimSpace(value)
-			if value == "" || strings.EqualFold(value, c.config.NullString) {
+			if value == "" || strings.EqualFold(value, c.NullString) {
 				continue
 			}
 
-			currentType := columnTypes[i]
-
-			// Type detection logic from first implementation
-			if _, ok := c.config.ForceTypes[headers[i]]; !ok {
-				columnTypes[i] = c.refineType(currentType, value)
+			if _, ok := c.ForceTypes[headers[i]]; !ok {
+				columnTypes[i] = c.refineType(columnTypes[i], value)
 			}
 		}
 
 		sampleCount++
-		if sampleCount >= c.config.MaxSampleSize {
+		if sampleCount >= c.MaxSampleSize {
 			break
 		}
 	}
@@ -220,7 +214,6 @@ func (c *CSVToMySQLConverter) determineColumnTypes(reader *csv.Reader, headers [
 }
 
 func (c *CSVToMySQLConverter) refineType(currentType, value string) string {
-	// Enhanced type detection combining both implementations
 	if isInteger(value) {
 		return "BIGINT"
 	}
@@ -235,19 +228,19 @@ func (c *CSVToMySQLConverter) refineType(currentType, value string) string {
 	}
 
 	length := len(value)
-	if length > c.config.TextThreshold {
+	if length > c.TextThreshold {
 		return "TEXT"
 	}
-	if length > c.config.VarcharLength {
+	if length > c.VarcharLength {
 		return fmt.Sprintf("VARCHAR(%d)", ((length/50)+1)*50)
 	}
-	return fmt.Sprintf("VARCHAR(%d)", c.config.VarcharLength)
+	return fmt.Sprintf("VARCHAR(%d)", c.VarcharLength)
 }
 
 // generateCreateTable generates the MySQL CREATE TABLE statement
 func (c *CSVToMySQLConverter) generateCreateTable(headers []string, columnTypes []string) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("CREATE TABLE `%s` (\n", c.config.TableName))
+	sb.WriteString(fmt.Sprintf("CREATE TABLE `%s` (\n", c.TableName))
 
 	columns := make([]string, 0, len(headers))
 	for i, header := range headers {
@@ -258,9 +251,9 @@ func (c *CSVToMySQLConverter) generateCreateTable(headers []string, columnTypes 
 	}
 
 	// Add primary key if specified
-	if len(c.config.PrimaryKeys) > 0 {
-		var pkColumns []string
-		for _, pk := range c.config.PrimaryKeys {
+	if len(c.PrimaryKeys) > 0 {
+		pkColumns := make([]string, 0, len(c.PrimaryKeys))
+		for _, pk := range c.PrimaryKeys {
 			pkColumns = append(pkColumns, fmt.Sprintf("`%s`", pk))
 		}
 		columns = append(columns, fmt.Sprintf("  PRIMARY KEY (%s)", strings.Join(pkColumns, ", ")))
@@ -277,14 +270,10 @@ func (c *CSVToMySQLConverter) generateInsertStatements(file *os.File, headers []
 	// Reset file reader
 	file.Seek(0, 0)
 	reader := csv.NewReader(file)
-	reader.Comma = c.config.Delimiter
+	reader.Comma = c.Delimiter
 
-	// Skip header if present
-	if c.config.HasHeader {
-		_, err := reader.Read()
-		if err != nil {
-			return "", fmt.Errorf("error skipping header: %w", err)
-		}
+	if c.HasHeader {
+		reader.Read()
 	}
 
 	var sb strings.Builder
@@ -301,7 +290,8 @@ func (c *CSVToMySQLConverter) generateInsertStatements(file *os.File, headers []
 		}
 
 		if len(record) != len(headers) {
-			return "", fmt.Errorf("column count mismatch: expected %d, got %d", len(headers), len(record))
+			fmt.Printf("column count mismatch: expected %d, got %d", len(headers), len(record))
+			continue
 		}
 
 		// Prepare values
@@ -312,7 +302,7 @@ func (c *CSVToMySQLConverter) generateInsertStatements(file *os.File, headers []
 			}
 
 			value = strings.TrimSpace(value)
-			if value == "" || strings.EqualFold(value, c.config.NullString) {
+			if value == "" || strings.EqualFold(value, c.NullString) {
 				values = append(values, "NULL")
 				continue
 			}
@@ -332,15 +322,15 @@ func (c *CSVToMySQLConverter) generateInsertStatements(file *os.File, headers []
 			values = append(values, fmt.Sprintf("'%s'", escaped))
 		}
 
-		if c.config.BatchInsert {
+		if c.BatchInsert {
 			batchRows = append(batchRows, fmt.Sprintf("(%s)", strings.Join(values, ", ")))
-			if len(batchRows) >= c.config.BatchSize {
+			if len(batchRows) >= c.BatchSize {
 				sb.WriteString(c.formatBatchInsert(headers, columnTypes, batchRows))
 				batchRows = batchRows[:0] // Clear batch
 			}
 		} else {
 			sb.WriteString(fmt.Sprintf("INSERT INTO `%s` (%s) VALUES (%s);\n",
-				c.config.TableName,
+				c.TableName,
 				c.formatInsertColumns(headers, columnTypes),
 				strings.Join(values, ", ")))
 		}
@@ -370,7 +360,7 @@ func (c *CSVToMySQLConverter) formatInsertColumns(headers []string, columnTypes 
 // formatBatchInsert formats a batch INSERT statement
 func (c *CSVToMySQLConverter) formatBatchInsert(headers []string, columnTypes []string, rows []string) string {
 	return fmt.Sprintf("INSERT INTO `%s` (%s) VALUES\n%s;\n",
-		c.config.TableName,
+		c.TableName,
 		c.formatInsertColumns(headers, columnTypes),
 		strings.Join(rows, ",\n"))
 }
@@ -418,28 +408,23 @@ func escapeSQLValue(value string) string {
 }
 
 func main() {
-	// Example usage
-	config := DefaultConfig()
-	config.InputFile = "input.csv"
-	config.TableName = "my_table"
-	config.PrimaryKeys = []string{"id"}
-	config.ForceTypes = map[string]string{
-		"id":          "INT AUTO_INCREMENT",
-		"price":       "DECIMAL(10,2)",
-		"description": "TEXT",
+	converter := NewCSVToMySQLConverter()
+	converter.InputFile = "data.csv"
+	converter.TableName = "sales_data"
+	converter.PrimaryKeys = []string{"order_id"}
+	converter.ForceTypes = map[string]string{
+		"order_id": "INT AUTO_INCREMENT",
+		"price":    "DECIMAL(10,2)",
 	}
-	config.SkipColumns = map[string]bool{
-		"internal_code": true,
-	}
+	converter.SkipColumns = map[string]bool{"internal_code": true}
 
-	converter := NewCSVToMySQLConverter(config)
-	createTable, inserts, err := converter.Convert()
+	createStmt, insertStmts, err := converter.Convert()
 	if err != nil {
-		log.Fatalf("Error converting CSV to MySQL: %v", err)
+		log.Fatalf("Error converting CSV to SQL: %v", err)
 	}
 
-	fmt.Println("-- CREATE TABLE STATEMENT:")
-	fmt.Println(createTable)
-	fmt.Println("\n-- INSERT STATEMENTS:")
-	fmt.Println(inserts)
+	fmt.Println("-- CREATE TABLE STATEMENT --")
+	fmt.Println(createStmt)
+	fmt.Println("\n-- INSERT STATEMENTS --")
+	fmt.Println(insertStmts)
 }
