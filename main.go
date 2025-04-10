@@ -176,7 +176,10 @@ func (c *CSVToMySQLConverter) determineColumnTypes(reader *csv.Reader, headers [
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("error reading record: %w", err)
+			fmt.Fprintf(os.Stderr,
+				"[determineColumnTypes] Warning: error reading record: %v\n"+
+					"\tSkipping the record of: %#v\n", err, record)
+			continue
 		}
 
 		if len(record) != len(headers) {
@@ -240,6 +243,7 @@ func (c *CSVToMySQLConverter) refineType(currentType, value string) string {
 // generateCreateTable generates the MySQL CREATE TABLE statement
 func (c *CSVToMySQLConverter) generateCreateTable(headers []string, columnTypes []string) string {
 	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("-- DROP TABLE `%s`;", c.TableName))
 	sb.WriteString(fmt.Sprintf("CREATE TABLE `%s` (\n", c.TableName))
 
 	columns := make([]string, 0, len(headers))
@@ -286,7 +290,10 @@ func (c *CSVToMySQLConverter) generateInsertStatements(file *os.File, headers []
 			break
 		}
 		if err != nil {
-			return "", fmt.Errorf("error reading record: %w", err)
+			fmt.Fprintf(os.Stderr,
+				"[generateInsertStatements] Warning: error reading record: %v\n"+
+					"\tSkipping the record of: %#v\n", err, record)
+			continue
 		}
 
 		if len(record) != len(headers) {
