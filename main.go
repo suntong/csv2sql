@@ -301,6 +301,19 @@ func (c *CSVToMySQLConverter) generateInsertStatements(file *os.File, headers []
 			continue
 		}
 
+		// Skip empty rows
+		col := strings.TrimSpace(record[0])
+		isNull := col == "" ||
+			strings.EqualFold(col, c.NullString)
+		if len(record) >= 2 {
+			col = strings.TrimSpace(record[1])
+			isNull = isNull && (col == "" ||
+				strings.EqualFold(col, c.NullString))
+		}
+		if isNull {
+			continue
+		}
+
 		// Prepare values
 		values := make([]string, 0, len(headers))
 		for i, value := range record {
