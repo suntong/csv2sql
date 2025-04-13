@@ -25,17 +25,9 @@ var (
 )
 
 // NewCSVToMySQLConverter creates a new converter instance
-func NewCSVToMySQLConverter() *CSVToMySQLConverter {
+func NewCSVToMySQLConverter(optsT OptsT) *CSVToMySQLConverter {
 	return &CSVToMySQLConverter{
-		OptsT: OptsT{
-			Delimiter:     ",",
-			NoHeader:      false,
-			VarcharLength: 255,
-			TextThreshold: 500,
-			NoBatchInsert: false,
-			BatchSize:     100,
-			MaxSampleSize: 1000,
-		},
+		OptsT:       optsT,
 		NullString:  "NULL",
 		ForceTypes:  make(map[string]string),
 		SkipColumns: make(map[string]bool),
@@ -229,7 +221,7 @@ func (c *CSVToMySQLConverter) refineType(currentType, value string) string {
 // generateCreateTable generates the MySQL CREATE TABLE statement
 func (c *CSVToMySQLConverter) generateCreateTable(headers []string, columnTypes []string) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("-- DROP TABLE `%s`;", c.TableName))
+	sb.WriteString(fmt.Sprintf("-- DROP TABLE %s;\n", c.TableName))
 	sb.WriteString(fmt.Sprintf("CREATE TABLE `%s` (\n", c.TableName))
 
 	columns := make([]string, 0, len(headers))
@@ -413,6 +405,7 @@ func escapeSQLValue(value string) string {
 	return "'" + escaped + "'"
 }
 
+/*
 func main() {
 	converter := NewCSVToMySQLConverter()
 	converter.InputFile = "data.csv"
@@ -434,3 +427,4 @@ func main() {
 	fmt.Println("\n-- INSERT STATEMENTS --")
 	fmt.Println(insertStmts)
 }
+*/
