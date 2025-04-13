@@ -16,10 +16,10 @@ type Config struct {
 	InputFile     string
 	TableName     string
 	Delimiter     rune
-	HasHeader     bool
+	NoHeader      bool
 	VarcharLength int
 	TextThreshold int
-	BatchInsert   bool
+	NoBatchInsert bool
 	BatchSize     int
 	NullString    string
 	PrimaryKeys   []string
@@ -43,10 +43,10 @@ func NewCSVToMySQLConverter() *CSVToMySQLConverter {
 	return &CSVToMySQLConverter{
 		Config: Config{
 			Delimiter:     ',',
-			HasHeader:     true,
+			NoHeader:      false,
 			VarcharLength: 255,
 			TextThreshold: 500,
-			BatchInsert:   true,
+			NoBatchInsert: false,
 			BatchSize:     100,
 			NullString:    "NULL",
 			MaxSampleSize: 1000,
@@ -91,7 +91,7 @@ func (c *CSVToMySQLConverter) Convert() (string, string, error) {
 }
 
 func (c *CSVToMySQLConverter) readHeaders(reader *csv.Reader) ([]string, error) {
-	if c.HasHeader {
+	if !c.NoHeader {
 		rawHeaders, err := reader.Read()
 		if err != nil {
 			return nil, fmt.Errorf("error reading header: %w", err)
@@ -276,7 +276,7 @@ func (c *CSVToMySQLConverter) generateInsertStatements(file *os.File, headers []
 	reader := csv.NewReader(file)
 	reader.Comma = c.Delimiter
 
-	if c.HasHeader {
+	if !c.NoHeader {
 		reader.Read()
 	}
 
@@ -342,7 +342,7 @@ func (c *CSVToMySQLConverter) generateInsertStatements(file *os.File, headers []
 			values = append(values, fmt.Sprintf("'%s'", escaped))
 		}
 
-		if c.BatchInsert {
+		if !c.NoBatchInsert {
 			batchRows = append(batchRows, fmt.Sprintf("(%s)", strings.Join(values, ", ")))
 			if len(batchRows) >= c.BatchSize {
 				sb.WriteString(c.formatBatchInsert(headers, columnTypes, batchRows))
