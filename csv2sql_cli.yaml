@@ -1,0 +1,83 @@
+# GoFlags based cli def file
+
+# program name, name for the executable
+ProgramName: csv2sql
+Authors: Tong Sun
+Since: 2025
+
+PackageName: main
+
+Name: csv2sql
+Desc: CSV to SQL DDL+DML
+Text: CSV to SQL insert statements
+Verbose: true
+Version: true
+
+Options:
+
+  - Name: InputFile
+    Type: string
+    Flag: i
+    EnvV: true
+    Usage: Input .csv file
+    Required: true
+
+  - Name: TableName
+    Type: string
+    Flag: t
+    EnvV: true
+    Usage: Table name to hold csv data
+    Required: true
+
+  - Name: PrimaryKeys
+    Type: '[]string'
+    Flag: k
+    EnvV: true
+    Usage: Primary keys of the table
+
+  - Name: Delimiter
+    Type: string
+    Flag: d
+    EnvV: true
+    Usage: Delimiter char of csv data
+    Value: ","
+
+  - Name: NoHeader
+    Type: bool
+    Flag: H
+    EnvV: true
+    Usage: Not having csv header
+
+  - Name: NoBatchInsert
+    Type: bool
+    Flag: B,bi
+    EnvV: true
+    Usage: No batch insert
+
+  - Name: BatchSize
+    Type: int
+    Flag: bs
+    EnvV: true
+    Usage: BatchSize
+    Value: 100
+
+  - Name: VarcharLength
+    Type: int
+    Flag: vl
+    EnvV: true
+    Usage: Varchar length
+    Value: 255
+
+  - Name: TextThreshold
+    Type: int
+    Flag: tt
+    EnvV: true
+    Usage: Text length threshold
+    Value: 100
+
+  - Name: MaxSampleSize
+    Type: int
+    Flag: mss
+    EnvV: true
+    Usage: Max sample size to determine column types
+    Value: 1000

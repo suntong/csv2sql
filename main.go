@@ -11,24 +11,10 @@ import (
 	"strings"
 )
 
-// Config holds the configuration for the conversion
-type Config struct {
-	InputFile     string
-	TableName     string
-	Delimiter     rune
-	NoHeader      bool
-	VarcharLength int
-	TextThreshold int
-	NoBatchInsert bool
-	BatchSize     int
-	NullString    string
-	PrimaryKeys   []string
-	MaxSampleSize int
-}
-
 // CSVToMySQLConverter handles the conversion process
 type CSVToMySQLConverter struct {
-	Config
+	OptsT
+	NullString  string
 	ForceTypes  map[string]string // column name -> MySQL type
 	SkipColumns map[string]bool   // columns to skip
 }
@@ -41,16 +27,16 @@ var (
 // NewCSVToMySQLConverter creates a new converter instance
 func NewCSVToMySQLConverter() *CSVToMySQLConverter {
 	return &CSVToMySQLConverter{
-		Config: Config{
-			Delimiter:     ',',
+		OptsT: OptsT{
+			Delimiter:     ",",
 			NoHeader:      false,
 			VarcharLength: 255,
 			TextThreshold: 500,
 			NoBatchInsert: false,
 			BatchSize:     100,
-			NullString:    "NULL",
 			MaxSampleSize: 1000,
 		},
+		NullString:  "NULL",
 		ForceTypes:  make(map[string]string),
 		SkipColumns: make(map[string]bool),
 	}
@@ -65,7 +51,7 @@ func (c *CSVToMySQLConverter) Convert() (string, string, error) {
 	defer file.Close()
 
 	reader := csv.NewReader(file)
-	reader.Comma = c.Delimiter
+	reader.Comma = rune(strings.TrimSpace(c.Delimiter)[0])
 	reader.TrimLeadingSpace = true
 
 	headers, err := c.readHeaders(reader)
@@ -124,7 +110,7 @@ func (c *CSVToMySQLConverter) readHeaders(reader *csv.Reader) ([]string, error) 
 	defer file.Close()
 
 	reader = csv.NewReader(file)
-	reader.Comma = c.Delimiter
+	reader.Comma = rune(strings.TrimSpace(c.Delimiter)[0])
 	reader.TrimLeadingSpace = true
 
 	return headers, nil
@@ -274,7 +260,7 @@ func (c *CSVToMySQLConverter) generateInsertStatements(file *os.File, headers []
 	// Reset file reader
 	file.Seek(0, 0)
 	reader := csv.NewReader(file)
-	reader.Comma = c.Delimiter
+	reader.Comma = rune(strings.TrimSpace(c.Delimiter)[0])
 
 	if !c.NoHeader {
 		reader.Read()
