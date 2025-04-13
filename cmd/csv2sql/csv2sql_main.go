@@ -16,10 +16,9 @@ import (
 	"os"
 
 	"github.com/go-easygen/go-flags"
-)
 
-// for `go generate -x`
-//go:generate sh csv2sql_cliGen.sh
+	"github.com/suntong/csv2sql"
+)
 
 //////////////////////////////////////////////////////////////////////////
 // Constant and data type/structure definitions
@@ -33,7 +32,7 @@ var (
 	date     = "2025-04-12"
 
 	// Opts store all the configurable options
-	Opts OptsT
+	Opts csv2sql.OptsT
 )
 
 var gfParser = flags.NewParser(&Opts, flags.Default)
@@ -70,7 +69,7 @@ func showVersion() {
 
 // DoCsv2sql implements the business logic of command `csv2sql`
 func DoCsv2sql() error {
-	converter := NewCSVToMySQLConverter(Opts)
+	converter := csv2sql.NewCSVToMySQLConverter(Opts)
 	// converter.ForceTypes = map[string]string{
 	// 	"order_id": "INT AUTO_INCREMENT",
 	// 	"price":    "DECIMAL(10,2)",

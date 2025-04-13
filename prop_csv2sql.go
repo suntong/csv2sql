@@ -1,4 +1,7 @@
-package main
+package csv2sql
+
+// for `go generate -x`
+//go:generate sh csv2sql_cliGen.sh
 
 import (
 	"encoding/csv"

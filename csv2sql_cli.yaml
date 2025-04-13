@@ -5,7 +5,7 @@ ProgramName: csv2sql
 Authors: Tong Sun
 Since: 2025
 
-PackageName: main
+PackageName: csv2sql
 
 Name: csv2sql
 Desc: CSV to SQL DDL+DML
