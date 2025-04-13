@@ -28,7 +28,7 @@ import (
 
 var (
 	progname = "csv2sql"
-	version  = "0.1.0"
+	version  = "1.0.0"
 	date     = "2025-04-12"
 
 	// Opts store all the configurable options
