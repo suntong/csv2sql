@@ -60,7 +60,10 @@ func (c *CSVToMySQLConverter) Convert() (string, string, error) {
 	}
 
 	// Generate CREATE TABLE statement
-	createTable := c.generateCreateTable(headers, columnTypes)
+	createTable := ""
+	if !c.NoDDL {
+		createTable = c.generateCreateTable(headers, columnTypes)
+	}
 
 	// Generate INSERT statements
 	inserts, err := c.generateInsertStatements(file, headers, columnTypes)
@@ -360,7 +363,7 @@ func (c *CSVToMySQLConverter) formatInsertColumns(headers []string, columnTypes 
 
 // formatBatchInsert formats a batch INSERT statement
 func (c *CSVToMySQLConverter) formatBatchInsert(headers []string, columnTypes []string, rows []string) string {
-	return fmt.Sprintf("INSERT INTO `%s` (%s) VALUES\n%s;\n",
+	return fmt.Sprintf("\nINSERT INTO `%s` (%s) VALUES\n%s;\n",
 		c.TableName,
 		c.formatInsertColumns(headers, columnTypes),
 		strings.Join(rows, ",\n"))

@@ -31,7 +31,7 @@ import (
 //  var (
 //          progname  = "csv2sql"
 //          version   = "0.1.0"
-//          date = "2025-04-13"
+//          date = "2025-04-15"
 
 //  	// Opts store all the configurable options
 //  	Opts OptsT
@@ -90,6 +90,7 @@ type OptsT struct {
 	VarcharLength int      `long:"vl" env:"CSV2SQL_VARCHARLENGTH" description:"Varchar length" default:"255"`
 	TextThreshold int      `long:"tt" env:"CSV2SQL_TEXTTHRESHOLD" description:"Text length threshold" default:"100"`
 	MaxSampleSize int      `long:"mss" env:"CSV2SQL_MAXSAMPLESIZE" description:"Max sample size to determine column types" default:"1000"`
+	NoDDL         bool     `short:"D" long:"noddl" env:"CSV2SQL_NODDL" description:"Not generating CREATE TABLE DDL"`
 	Verbflg       func()   `short:"v" long:"verbose" description:"Verbose mode (Multiple -v options increase the verbosity)"`
 	Verbose       int
 	Version       func() `short:"V" long:"version" description:"Show program version and exit"`

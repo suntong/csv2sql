@@ -28,8 +28,8 @@ import (
 
 var (
 	progname = "csv2sql"
-	version  = "1.0.0"
-	date     = "2025-04-12"
+	version  = "1.0.1"
+	date     = "2025-04-15"
 
 	// Opts store all the configurable options
 	Opts csv2sql.OptsT
@@ -83,7 +83,8 @@ func DoCsv2sql() error {
 
 	fmt.Println("-- CREATE TABLE STATEMENT --")
 	fmt.Println(createStmt)
-	fmt.Println("\n-- INSERT STATEMENTS --")
+	fmt.Printf("\n-- INSERT STATEMENTS --\n--  DELETE FROM %s;",
+		converter.TableName)
 	fmt.Println(insertStmts)
 	return nil
 }

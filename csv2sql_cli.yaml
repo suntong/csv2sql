@@ -81,3 +81,9 @@ Options:
     EnvV: true
     Usage: Max sample size to determine column types
     Value: 1000
+
+  - Name: NoDDL
+    Type: bool
+    Flag: D,noddl
+    EnvV: true
+    Usage: Not generating CREATE TABLE DDL
