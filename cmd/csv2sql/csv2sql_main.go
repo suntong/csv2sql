@@ -83,8 +83,14 @@ func DoCsv2sql() error {
 
 	fmt.Println("-- CREATE TABLE STATEMENT --")
 	fmt.Println(createStmt)
-	fmt.Printf("\n-- INSERT STATEMENTS --\n--  DELETE FROM %s;",
-		converter.TableName)
+
+	noDel := "--  "
+	if Opts.NoDDL {
+		noDel = ""
+	}
+
+	fmt.Printf("\n-- INSERT STATEMENTS --\n%sDELETE FROM %s;",
+		noDel, converter.TableName)
 	fmt.Println(insertStmts)
 	return nil
 }
